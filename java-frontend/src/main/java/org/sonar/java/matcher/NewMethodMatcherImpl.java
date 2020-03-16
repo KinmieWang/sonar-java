@@ -4,9 +4,12 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.function.Predicate;
+import javax.annotation.CheckForNull;
+import javax.annotation.Nullable;
 import org.sonar.plugins.java.api.semantic.Symbol;
 import org.sonar.plugins.java.api.semantic.Symbol.MethodSymbol;
 import org.sonar.plugins.java.api.semantic.Type;
+import org.sonar.plugins.java.api.tree.ExpressionTree;
 import org.sonar.plugins.java.api.tree.IdentifierTree;
 import org.sonar.plugins.java.api.tree.MemberSelectExpressionTree;
 import org.sonar.plugins.java.api.tree.MethodInvocationTree;
@@ -18,6 +21,7 @@ import org.sonar.plugins.java.api.tree.Tree;
 public class NewMethodMatcherImpl implements NewMethodMatchers {
 
   private Predicate<Type> typePredicate;
+  private Predicate<Type> callSitePredicate;
   private Predicate<String> methodName;
   private List<Predicate<List<Type>>> parameters = new ArrayList<>();
 
@@ -104,6 +108,16 @@ public class NewMethodMatcherImpl implements NewMethodMatchers {
   }
 
   @Override
+  public NewMethodMatchers callSite(Predicate<Type> callSitePredicate) {
+    if (this.callSitePredicate == null) {
+      this.callSitePredicate = typePredicate;
+    } else {
+      this.callSitePredicate = this.callSitePredicate.or(callSitePredicate);
+    }
+    return this;
+  }
+
+  @Override
   public NewMethodMatchers withParameters(String... parametersType) {
     checkState();
     List<Predicate<Type>> newParameterList = new ArrayList<>();
@@ -147,27 +161,33 @@ public class NewMethodMatcherImpl implements NewMethodMatchers {
 
   @Override
   public boolean matches(NewClassTree newClassTree) {
-    return matches(newClassTree.constructorSymbol());
+    return matches(newClassTree.constructorSymbol(), null);
   }
 
   @Override
   public boolean matches(MethodInvocationTree mit) {
     IdentifierTree id = getIdentifier(mit);
-    return matches(id.symbol());
+    return matches(id.symbol(), getCallSiteType(mit));
   }
 
   @Override
   public boolean matches(MethodTree methodTree) {
-    return matches(methodTree.symbol());
+    MethodSymbol symbol = methodTree.symbol();
+    Symbol.TypeSymbol enclosingClass = symbol.enclosingClass();
+    return enclosingClass != null && matches(symbol, enclosingClass.type());
   }
 
   @Override
   public boolean matches(MethodReferenceTree methodReferenceTree) {
-    return matches(methodReferenceTree.method().symbol());
+    return matches(methodReferenceTree.method().symbol(), getCallSiteType(methodReferenceTree));
   }
 
   @Override
   public boolean matches(Symbol symbol) {
+    return matches(symbol, null);
+  }
+
+  private boolean matches(Symbol symbol, @Nullable Type callSiteType) {
     if (typePredicate == null || methodName == null || parameters.isEmpty()) {
       throw new IllegalStateException("A method matcher should set at least one type, name, and parameter list.");
     }
@@ -176,11 +196,35 @@ public class NewMethodMatcherImpl implements NewMethodMatchers {
       MethodSymbol methodSymbol = (MethodSymbol) symbol;
       if (methodName.test(methodSymbol.name())
         && typePredicate.test(methodSymbol.owner().type())
-        && parameters.stream().anyMatch(p -> p.test(methodSymbol.parameterTypes()))) {
-        return true;
+        && callSitePredicate.test(callSiteType)) {
+        List<Type> parameterTypes = methodSymbol.parameterTypes();
+        if (parameters.stream().anyMatch(p -> p.test(parameterTypes))) {
+          return true;
+        }
       }
     }
     return otherMethodMatchers.stream().anyMatch(m -> m.matches(symbol));
+  }
+
+  @CheckForNull
+  private static Type getCallSiteType(MethodReferenceTree referenceTree) {
+    Tree expression = referenceTree.expression();
+    if (expression instanceof ExpressionTree) {
+      return ((ExpressionTree) expression).symbolType();
+    }
+    return null;
+  }
+
+  @CheckForNull
+  private static Type getCallSiteType(MethodInvocationTree mit) {
+    ExpressionTree methodSelect = mit.methodSelect();
+    // methodSelect can only be Tree.Kind.IDENTIFIER or Tree.Kind.MEMBER_SELECT
+    if (methodSelect.is(Tree.Kind.IDENTIFIER)) {
+      Symbol.TypeSymbol enclosingClassSymbol = ((IdentifierTree) methodSelect).symbol().enclosingClass();
+      return enclosingClassSymbol != null ? enclosingClassSymbol.type() : null;
+    } else {
+      return ((MemberSelectExpressionTree) methodSelect).expression().symbolType();
+    }
   }
 
   private void checkState() {

@@ -122,6 +122,14 @@ public interface NewMethodMatchers {
    */
   NewMethodMatchers ofType(Predicate<Type> typePredicate);
 
+
+  // Methods related to call site
+
+  /**
+   * Type of the call site
+   */
+  NewMethodMatchers callSite(Predicate<Type> callSitePredicate);
+
   // Methods related to parameters
   //TODO: parameters match type of subtype??
   /**

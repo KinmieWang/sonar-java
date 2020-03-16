@@ -1,5 +1,6 @@
 package org.sonar.java.matcher;
 
+import java.util.List;
 import java.util.function.Predicate;
 import org.sonar.plugins.java.api.semantic.Symbol;
 import org.sonar.plugins.java.api.semantic.Type;
@@ -52,9 +53,11 @@ public interface NewMethodMatchers {
   // ex:  private static final String JAVA_LANG_STRING = "java.lang.String";
   //      private static final String JAVA_LANG_OBJECT = "java.lang.Object";
 
-  NewMethodMatchers create();
+  static NewMethodMatchers create() {
+    return new NewMethodMatcherImpl();
+  }
 
-  //TODO: copy??
+  NewMethodMatchers copy();
 
   // Methods related to name
 
@@ -138,14 +141,14 @@ public interface NewMethodMatchers {
    * Can be called multiple time to match any of the parameters lists.
    */
   NewMethodMatchers withParameters(String... parametersType);
-  NewMethodMatchers withParameters(Predicate<Type>... parametersType);
+  NewMethodMatchers withParameters(List<Predicate<Type>> parametersType);
 
   /**
    * Start of list of parameters, with any other (0 or more) parameter of any type.
    * Can be called multiple time to match any of the parameters lists.
    */
   NewMethodMatchers startWithParameters(String... parametersType);
-  NewMethodMatchers startWithParameters(Predicate<Type>... parametersType);
+  NewMethodMatchers startWithParameters(List<Predicate<Type>> parametersType);
 
   // Methods related to combination
 

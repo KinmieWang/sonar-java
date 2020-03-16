@@ -2,6 +2,7 @@ package org.sonar.java.matcher;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.List;
 import java.util.function.Predicate;
 import javax.annotation.CheckForNull;
@@ -28,8 +29,19 @@ public class NewMethodMatcherImpl implements NewMethodMatchers {
   private List<NewMethodMatchers> otherMethodMatchers = new ArrayList<>();
 
   @Override
-  public NewMethodMatchers create() {
-    return new NewMethodMatcherImpl();
+  public NewMethodMatchers copy() {
+    NewMethodMatcherImpl copy = new NewMethodMatcherImpl();
+    copy.typePredicate = typePredicate;
+    copy.callSitePredicate = callSitePredicate;
+    copy.methodName = methodName;
+    copy.parameters = new ArrayList<>(parameters);
+
+    List<NewMethodMatchers> otherMethodMatchersCopy = new ArrayList<>();
+    for (NewMethodMatchers otherMatcher : otherMethodMatchers) {
+      otherMethodMatchersCopy.add(otherMatcher.copy());
+    }
+    copy.otherMethodMatchers = otherMethodMatchersCopy;
+    return copy;
   }
 
   @Override
@@ -110,7 +122,7 @@ public class NewMethodMatcherImpl implements NewMethodMatchers {
   @Override
   public NewMethodMatchers callSite(Predicate<Type> callSitePredicate) {
     if (this.callSitePredicate == null) {
-      this.callSitePredicate = typePredicate;
+      this.callSitePredicate = callSitePredicate;
     } else {
       this.callSitePredicate = this.callSitePredicate.or(callSitePredicate);
     }
@@ -129,9 +141,9 @@ public class NewMethodMatcherImpl implements NewMethodMatchers {
   }
 
   @Override
-  public NewMethodMatchers withParameters(Predicate<Type>... parametersType) {
+  public NewMethodMatchers withParameters(List<Predicate<Type>> parametersType) {
     checkState();
-    parameters.add(actualTypes -> exactMatchesParameters(Arrays.asList(parametersType), actualTypes));
+    parameters.add(actualTypes -> exactMatchesParameters(parametersType, actualTypes));
     return this;
   }
 
@@ -147,9 +159,9 @@ public class NewMethodMatcherImpl implements NewMethodMatchers {
   }
 
   @Override
-  public NewMethodMatchers startWithParameters(Predicate<Type>... parametersType) {
+  public NewMethodMatchers startWithParameters(List<Predicate<Type>> parametersType) {
     checkState();
-    parameters.add(actualTypes -> startWithParameters(Arrays.asList(parametersType), actualTypes));
+    parameters.add(actualTypes -> startWithParameters(parametersType, actualTypes));
     return this;
   }
 
@@ -188,18 +200,27 @@ public class NewMethodMatcherImpl implements NewMethodMatchers {
   }
 
   private boolean matches(Symbol symbol, @Nullable Type callSiteType) {
-    if (typePredicate == null || methodName == null || parameters.isEmpty()) {
+    if ((typePredicate == null && callSitePredicate == null) || methodName == null || parameters.isEmpty()) {
       throw new IllegalStateException("A method matcher should set at least one type, name, and parameter list.");
     }
 
     if (symbol.isMethodSymbol()) {
       MethodSymbol methodSymbol = (MethodSymbol) symbol;
-      if (methodName.test(methodSymbol.name())
-        && typePredicate.test(methodSymbol.owner().type())
-        && callSitePredicate.test(callSiteType)) {
-        List<Type> parameterTypes = methodSymbol.parameterTypes();
-        if (parameters.stream().anyMatch(p -> p.test(parameterTypes))) {
-          return true;
+      if (methodName.test(methodSymbol.name())) {
+        boolean result = true;
+        if (typePredicate != null) {
+          result = typePredicate.test(methodSymbol.owner().type());
+        }
+
+        if (callSitePredicate != null) {
+          result &= callSiteType != null && callSitePredicate.test(callSiteType);
+        }
+
+        if (result) {
+          List<Type> parameterTypes = methodSymbol.parameterTypes();
+          if (parameters.stream().anyMatch(p -> p.test(parameterTypes))) {
+            return true;
+          }
         }
       }
     }
@@ -241,14 +262,14 @@ public class NewMethodMatcherImpl implements NewMethodMatchers {
   }
 
   private static boolean startWithParameters(List<Predicate<Type>> expectedTypes, List<Type> actualTypes) {
-    if (actualTypes.size() >= expectedTypes.size()) {
+    if (actualTypes.size() < expectedTypes.size()) {
       return false;
     }
     return matchesParameters(expectedTypes, actualTypes);
   }
 
   private static boolean matchesParameters(List<Predicate<Type>> expectedTypes, List<Type> actualTypes) {
-    for (int i = 0; i < actualTypes.size(); i++) {
+    for (int i = 0; i < expectedTypes.size(); i++) {
       if (!expectedTypes.get(i).test(actualTypes.get(i))) {
         return false;
       }

@@ -23,17 +23,18 @@ import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Scanner;
 import org.apache.commons.io.IOUtils;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
-import org.sonar.api.batch.fs.InputFile;
+import org.sonar.plugins.java.api.SourceMap;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.Mockito.mock;
 
 class GeneratedFileTest {
 
@@ -41,14 +42,12 @@ class GeneratedFileTest {
   Path tmp;
   Path expected;
   private GeneratedFile actual;
-  private InputFile source;
 
   @BeforeEach
   void setUp() throws Exception {
     expected = tmp.resolve("file.jsp");
     Files.write(expected, "content".getBytes(StandardCharsets.UTF_8));
-    source = mock(InputFile.class);
-    actual = new GeneratedFile(expected, source);
+    actual = new GeneratedFile(expected);
   }
 
   @Test
@@ -69,7 +68,6 @@ class GeneratedFileTest {
     assertEquals(expected.toString(), actual.key());
     assertTrue(actual.isFile());
     assertEquals("java", actual.language());
-    assertEquals(source, actual.getSource());
     assertEquals(expected.toString(), actual.toString());
   }
 
@@ -83,6 +81,30 @@ class GeneratedFileTest {
     assertThrows(UnsupportedOperationException.class, () -> actual.newRange(0, 0, 0, 0));
     assertThrows(UnsupportedOperationException.class, () -> actual.selectLine(0));
 
+  }
+
+  @Test
+  void test_source_map() {
+    String smap = "SMAP\n" +
+      "index_jsp.java\n" +
+      "JSP\n" +
+      "*S JSP\n" +
+      "*F\n" +
+      "+ 0 index.jsp\n" +
+      "index.jsp\n" +
+      "*L\n" +
+      "1,6:116,0\n" +
+      "*E\n";
+
+    SmapFile smapFile = new SmapFile(tmp.resolve("index_jsp.class.smap"), new Scanner(smap));
+    GeneratedFile generatedFile = new GeneratedFile(tmp.resolve("index_jsp.java"));
+    generatedFile.addSmap(smapFile);
+
+    GeneratedFile.SourceMapImpl sourceMap = ((GeneratedFile.SourceMapImpl) generatedFile.sourceMap());
+
+    SourceMap.Location location = sourceMap.getLocation(116, 116);
+    assertThat(location.startLine()).isEqualTo(1);
+    assertThat(location.endLine()).isEqualTo(6);
   }
 
 }

@@ -59,8 +59,8 @@ public class SmapFile {
 
 
   public static SmapFile fromPath(Path sourceMapPath) {
-    try {
-      return new SmapFile(sourceMapPath, new Scanner(sourceMapPath.toFile(), StandardCharsets.UTF_8.toString()));
+    try (Scanner sc = new Scanner(sourceMapPath.toFile(), StandardCharsets.UTF_8.toString())) {
+      return new SmapFile(sourceMapPath, sc);
     } catch (Exception e) {
       throw new IllegalStateException("Error reading sourcemap " + sourceMapPath, e);
     }

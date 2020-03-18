@@ -30,7 +30,9 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.sonar.plugins.java.api.SourceMap;
 
+import static java.lang.String.format;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -105,6 +107,41 @@ class GeneratedFileTest {
     SourceMap.Location location = sourceMap.getLocation(116, 116);
     assertThat(location.startLine()).isEqualTo(1);
     assertThat(location.endLine()).isEqualTo(6);
+  }
+
+  @Test
+  void should_not_accept_unrelated_smap() throws Exception {
+    String smap = "SMAP\n" +
+      "index_jsp.java\n" +
+      "JSP\n" +
+      "*S JSP\n" +
+      "*F\n" +
+      "+ 0 index.jsp\n" +
+      "index.jsp\n" +
+      "*L\n" +
+      "1,6:116,0\n" +
+      "*E\n";
+
+    SmapFile smapFile = new SmapFile(tmp.resolve("index_jsp.class.smap"), new Scanner(smap));
+    GeneratedFile generatedFile = new GeneratedFile(tmp.resolve("index_jsp.java"));
+    generatedFile.addSmap(smapFile);
+
+    String unrelatedSmap = "SMAP\n" +
+      "unrelated.java\n" +
+      "JSP\n" +
+      "*S JSP\n" +
+      "*F\n" +
+      "+ 0 index.jsp\n" +
+      "index.jsp\n" +
+      "*L\n" +
+      "1,6:116,0\n" +
+      "*E\n";
+
+    SmapFile unrelated = new SmapFile(tmp.resolve("index_jsp.class.smap"), new Scanner(unrelatedSmap));
+    assertThatThrownBy(() -> generatedFile.addSmap(unrelated))
+      .isInstanceOf(IllegalStateException.class)
+      .hasMessage(format("Invalid smap %s/unrelated.java for this generated file %s/index_jsp.java", tmp, tmp));
+
   }
 
 }

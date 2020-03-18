@@ -30,6 +30,8 @@ import java.util.Scanner;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import javax.annotation.Nullable;
+import org.sonar.api.utils.log.Logger;
+import org.sonar.api.utils.log.Loggers;
 
 import static java.lang.Integer.parseInt;
 
@@ -37,7 +39,7 @@ import static java.lang.Integer.parseInt;
  * SMAP format is described by <a href="https://jcp.org/aboutJava/communityprocess/final/jsr045/index.html">JSR 45</a>
  * JSR 45 defines more generic format supporting translation from multiple languages, here we implement only subset used
  * by Jasper for JSP to Java translation.
- *
+ * <p>
  * We expect only single JSP stratum, with single FileSection and LineSection. Moreover only single file is expected in FileSection
  */
 public class SmapFile {
@@ -47,6 +49,8 @@ public class SmapFile {
     "(?:,(?<repeatCount>\\d+))?:" +
     "(?<outputStartLine>\\d+)" +
     "(?:,(?<outputIncrement>\\d+))?");
+
+  private static final Logger LOG = Loggers.get(SmapFile.class);
 
   private final Path generatedFile;
   private Map<Integer, FileInfo> fileSection;
@@ -75,17 +79,10 @@ public class SmapFile {
       throw new IllegalStateException("Not a JSP source map");
     }
     findSection("*S JSP");
-    while (sc.hasNext() && !sc.hasNext("\\*E")) {
-      if (sc.hasNext("\\*F")) {
-        sc.nextLine();
-        fileSection = readFileSection();
-      }
-      if (sc.hasNext("\\*L")) {
-        sc.nextLine();
-        lineSection = readLineSection();
-      }
-      sc.nextLine();
-    }
+    findSection("*F");
+    fileSection = readFileSection();
+    findSection("*L");
+    lineSection = readLineSection();
   }
 
   public Path getGeneratedFile() {
@@ -118,6 +115,8 @@ public class SmapFile {
         String outputIncrementGroup = matcher.group("outputIncrement");
         int outputIncrement = outputIncrementGroup != null ? parseInt(outputIncrementGroup) : 1;
         result.add(new LineInfo(inputStartLine, lineFileId, repeatCount, outputStartLine, outputIncrement));
+      } else {
+        LOG.warn("Invalid line info {}", line);
       }
     }
     return result;
@@ -134,10 +133,8 @@ public class SmapFile {
 
   private Map<Integer, FileInfo> readFileSection() {
     Map<Integer, FileInfo> result = new HashMap<>();
-    while (sc.hasNext()) {
-      if (sc.hasNext("\\*L")) {
-        break;
-      } else if (sc.hasNext("\\+")) {
+    while (sc.hasNext() && !sc.hasNext("\\*.")) {
+      if (sc.hasNext("\\+")) {
         sc.next();
         int fileId = sc.nextInt();
         String file = sc.next();
